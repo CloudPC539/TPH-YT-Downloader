@@ -1,10 +1,9 @@
 import os
-from flask import Flask, render_template, request, jsonify
+import tempfile
+from flask import Flask, render_template, request, jsonify, send_file, after_this_request
 import yt_dlp
 
 app = Flask(__name__)
-
-DOWNLOAD_DIR = os.path.join(os.path.expanduser("~"), "Downloads")
 
 @app.route("/")
 def index():
@@ -12,7 +11,7 @@ def index():
 
 @app.route("/api/fetch-info", methods=["POST"])
 def fetch_info():
-    data = request.json
+    data = request.json or {}
     url = data.get("url")
 
     if not url:
@@ -37,47 +36,58 @@ def fetch_info():
 
 @app.route("/api/download", methods=["POST"])
 def download_media():
-    data = request.json
+    data = request.json or {}
     url = data.get("url")
     quality = data.get("quality")
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    output_template = os.path.join(DOWNLOAD_DIR, "%(title)s.%(ext)s")
-    ydl_opts = {"outtmpl": output_template}
+    # Create a temporary directory to store the file before sending
+    temp_dir = tempfile.mkdtemp()
+    output_template = os.path.join(temp_dir, "%(title)s.%(ext)s")
 
+    ydl_opts = {
+        "outtmpl": output_template,
+        "quiet": True,
+    }
+
+    # Format mapping (selecting single-file streams when possible to avoid needing ffmpeg)
     if quality == "best":
-        ydl_opts["format"] = "bestvideo+bestaudio/best"
+        ydl_opts["format"] = "best[ext=mp4]/best"
     elif quality == "1080p":
-        ydl_opts["format"] = "bestvideo[height<=1080]+bestaudio/best[height<=1080]"
+        ydl_opts["format"] = "best[height<=1080][ext=mp4]/best[height<=1080]"
     elif quality == "720p":
-        ydl_opts["format"] = "bestvideo[height<=720]+bestaudio/best[height<=720]"
+        ydl_opts["format"] = "best[height<=720][ext=mp4]/best[height<=720]"
     elif quality == "480p":
-        ydl_opts["format"] = "bestvideo[height<=480]+bestaudio/best[height<=480]"
-    elif quality == "mp3":
+        ydl_opts["format"] = "best[height<=480][ext=mp4]/best[height<=480]"
+    elif quality in ["mp3", "m4a", "wav"]:
         ydl_opts["format"] = "bestaudio/best"
-        ydl_opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "mp3",
-            "preferredquality": "320",
-        }]
-    elif quality == "m4a":
-        ydl_opts["format"] = "bestaudio[ext=m4a]/best"
-    elif quality == "wav":
-        ydl_opts["format"] = "bestaudio/best"
-        ydl_opts["postprocessors"] = [{
-            "key": "FFmpegExtractAudio",
-            "preferredcodec": "wav",
-        }]
 
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            ydl.download([url])
-        return jsonify({"message": f"Successfully downloaded to {DOWNLOAD_DIR}"})
+            info = ydl.extract_info(url, download=True)
+            filename = ydl.prepare_filename(info)
+
+        # Cleanup temporary file after sending
+        @after_this_request
+        def cleanup(response):
+            try:
+                if os.path.exists(filename):
+                    os.remove(filename)
+                os.rmdir(temp_dir)
+            except Exception:
+                pass
+            return response
+
+        return send_file(
+            filename,
+            as_attachment=True,
+            download_name=os.path.basename(filename)
+        )
     except Exception as e:
         return jsonify({"error": str(e)}), 500
 
 if __name__ == "__main__":
-    print("Starting server... Open http://127.0.0.1:5000 in your browser.")
-    app.run(debug=True, port=5000)
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port)
