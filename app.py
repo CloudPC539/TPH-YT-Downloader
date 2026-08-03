@@ -1,9 +1,27 @@
 import os
+import re
 import tempfile
 from flask import Flask, render_template, request, jsonify, send_file, after_this_request
 import yt_dlp
 
 app = Flask(__name__)
+
+# Convert YouTube Shorts URLs to standard Watch URLs
+def clean_youtube_url(url):
+    shorts_match = re.search(r"youtube\.com/shorts/([a-zA-Z0-9_-]+)", url)
+    if shorts_match:
+        video_id = shorts_match.group(1)
+        return f"https://www.youtube.com/watch?v={video_id}"
+    return url
+
+# Common options with a realistic User-Agent to bypass cloud blocks
+BASE_YDL_OPTS = {
+    "quiet": True,
+    "no_warnings": True,
+    "http_headers": {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    },
+}
 
 @app.route("/")
 def index():
@@ -12,13 +30,13 @@ def index():
 @app.route("/api/fetch-info", methods=["POST"])
 def fetch_info():
     data = request.json or {}
-    url = data.get("url")
+    url = clean_youtube_url(data.get("url", ""))
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
     try:
-        ydl_opts = {"quiet": True, "skip_download": True}
+        ydl_opts = {**BASE_YDL_OPTS, "skip_download": True}
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=False)
             title = info.get("title", "Unknown Title")
@@ -37,22 +55,20 @@ def fetch_info():
 @app.route("/api/download", methods=["POST"])
 def download_media():
     data = request.json or {}
-    url = data.get("url")
+    url = clean_youtube_url(data.get("url", ""))
     quality = data.get("quality")
 
     if not url:
         return jsonify({"error": "URL is required"}), 400
 
-    # Create a temporary directory to store the file before sending
     temp_dir = tempfile.mkdtemp()
     output_template = os.path.join(temp_dir, "%(title)s.%(ext)s")
 
     ydl_opts = {
+        **BASE_YDL_OPTS,
         "outtmpl": output_template,
-        "quiet": True,
     }
 
-    # Format mapping (selecting single-file streams when possible to avoid needing ffmpeg)
     if quality == "best":
         ydl_opts["format"] = "best[ext=mp4]/best"
     elif quality == "1080p":
@@ -69,7 +85,6 @@ def download_media():
             info = ydl.extract_info(url, download=True)
             filename = ydl.prepare_filename(info)
 
-        # Cleanup temporary file after sending
         @after_this_request
         def cleanup(response):
             try:
