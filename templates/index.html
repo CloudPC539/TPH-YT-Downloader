@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Media Downloader Pro</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #f4f6f8; color: #333; display: flex; justify-content: center; align-items: center; min-height: 100vh; padding: 20px; }
+        .app-card { width: 100%; max-width: 520px; background: #fff; border-radius: 8px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); border: 1px solid #e1e4e8; overflow: hidden; }
+        .header { padding: 20px; border-bottom: 1px solid #eaeaea; background-color: #fafafa; }
+        .header h1 { font-size: 1.25rem; font-weight: 700; color: #222; margin-bottom: 4px; }
+        .header p { font-size: 0.85rem; color: #666; }
+        .main-container { padding: 15px 20px 20px; }
+        .group-box { border: 1px solid #dcdcdc; border-radius: 6px; padding: 12px 15px; margin-bottom: 15px; position: relative; background-color: #fff; }
+        .group-title { position: absolute; top: -10px; left: 12px; background-color: #fff; padding: 0 6px; font-size: 0.75rem; font-weight: 600; color: #555; }
+        .input-row { display: flex; gap: 8px; align-items: center; }
+        .form-grid { display: grid; grid-template-columns: 120px 1fr; row-gap: 10px; align-items: center; }
+        label { font-size: 0.85rem; color: #333; }
+        input[type="text"], select { width: 100%; padding: 8px 10px; font-size: 0.875rem; border: 1px solid #ccc; border-radius: 4px; outline: none; background-color: #fff; }
+        input[type="text"]:focus, select:focus { border-color: #0055ff; box-shadow: 0 0 0 2px rgba(0, 85, 255, 0.1); }
+        .btn { padding: 8px 14px; font-size: 0.85rem; font-weight: 600; border: 1px solid #ccc; border-radius: 4px; background-color: #f0f0f0; color: #333; cursor: pointer; white-space: nowrap; }
+        .btn:hover { background-color: #e4e4e4; }
+        .btn:disabled { opacity: 0.6; cursor: not-allowed; }
+        .btn-primary { width: 100%; padding: 12px; font-size: 0.95rem; background-color: #2563eb; color: #fff; border: none; border-radius: 4px; margin-top: 5px; }
+        .btn-primary:hover { background-color: #1d4ed8; }
+        .info-label { font-size: 0.8rem; font-style: italic; color: #555; margin-top: 6px; display: block; }
+        .info-label.info { color: #0055ff; }
+        .info-label.success { color: #008800; }
+        .info-label.error { color: #cc0000; }
+        .status-label { font-size: 0.85rem; color: #333; margin-top: 6px; }
+        .progress-container { width: 100%; background-color: #e5e7eb; border-radius: 4px; height: 12px; overflow: hidden; margin-top: 4px; }
+        .progress-bar { width: 0%; height: 100%; background-color: #2563eb; transition: width 0.3s ease; }
+    </style>
+</head>
+<body>
+    <div class="app-card">
+        <div class="header">
+            <h1>YouTube Media Downloader</h1>
+            <p>Download YouTube videos, Shorts, or audio in high quality.</p>
+        </div>
+        <div class="main-container">
+            <div class="group-box">
+                <span class="group-title"> Video / Short URL </span>
+                <div class="input-row">
+                    <input type="text" id="urlInput" placeholder="https://www.youtube.com/watch?v=...">
+                    <button class="btn" id="fetchBtn" onclick="fetchInfo()">Fetch Info</button>
+                </div>
+                <span class="info-label" id="infoLabel">Enter URL above to start.</span>
+            </div>
+            <div class="group-box">
+                <span class="group-title"> Preferences </span>
+                <div class="form-grid">
+                    <label for="qualitySelect">Quality / Format:</label>
+                    <select id="qualitySelect">
+                        <option value="best">Best Quality (4K / 1080p)</option>
+                        <option value="1080p">1080p Full HD</option>
+                        <option value="720p">720p HD</option>
+                        <option value="480p">480p SD</option>
+                        <option value="mp3">Audio Only - MP3 (High Quality)</option>
+                        <option value="m4a">Audio Only - M4A</option>
+                        <option value="wav">Audio Only - WAV (Lossless)</option>
+                    </select>
+                    <label for="dirInput">Save To Folder:</label>
+                    <div class="input-row">
+                        <input type="text" id="dirInput" value="Downloads Folder" readonly>
+                    </div>
+                </div>
+            </div>
+            <div class="group-box">
+                <span class="group-title"> Progress </span>
+                <div class="progress-container">
+                    <div class="progress-bar" id="progressBar"></div>
+                </div>
+                <div class="status-label" id="statusLabel">Status: Ready</div>
+            </div>
+            <button class="btn btn-primary" id="downloadBtn" onclick="startDownload()">Download Media</button>
+        </div>
+    </div>
+    <script>
+        async function fetchInfo() {
+            const url = document.getElementById('urlInput').value.trim();
+            const infoLabel = document.getElementById('infoLabel');
+            const fetchBtn = document.getElementById('fetchBtn');
+            if (!url) return alert("Please enter a valid URL.");
+            fetchBtn.disabled = true;
+            infoLabel.className = "info-label info";
+            infoLabel.innerText = "Fetching video info...";
+            try {
+                const response = await fetch('/api/fetch-info', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    infoLabel.className = "info-label success";
+                    infoLabel.innerText = `🎬 ${data.title.substring(0, 40)}... [${data.duration}]`;
+                } else {
+                    infoLabel.className = "info-label error";
+                    infoLabel.innerText = "Failed to retrieve video info.";
+                }
+            } catch (err) {
+                infoLabel.className = "info-label error";
+                infoLabel.innerText = "Error connecting to server.";
+            } finally {
+                fetchBtn.disabled = false;
+            }
+        }
+        async function startDownload() {
+            const url = document.getElementById('urlInput').value.trim();
+            const quality = document.getElementById('qualitySelect').value;
+            const downloadBtn = document.getElementById('downloadBtn');
+            const statusLabel = document.getElementById('statusLabel');
+            const progressBar = document.getElementById('progressBar');
+            if (!url) return alert("Please enter a valid URL.");
+            downloadBtn.disabled = true;
+            progressBar.style.width = "50%";
+            statusLabel.innerText = "Status: Downloading...";
+            try {
+                const response = await fetch('/api/download', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url: url, quality: quality })
+                });
+                const data = await response.json();
+                if (response.ok) {
+                    progressBar.style.width = "100%";
+                    statusLabel.innerText = "Status: Download Complete!";
+                    alert(data.message);
+                } else {
+                    progressBar.style.width = "0%";
+                    statusLabel.innerText = "Status: Download Failed";
+                    alert(`Download failed: ${data.error}`);
+                }
+            } catch (err) {
+                progressBar.style.width = "0%";
+                statusLabel.innerText = "Status: Download Failed";
+                alert("Error connecting to backend server.");
+            } finally {
+                downloadBtn.disabled = false;
+            }
+        }
+    </script>
+</body>
+</html>
